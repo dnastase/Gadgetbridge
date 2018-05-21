@@ -44,6 +44,12 @@ import android.support.v7.widget.Toolbar;
 import android.view.MenuItem;
 import android.view.View;
 import android.widget.ImageView;
+import android.provider.Settings;
+import android.os.PowerManager;
+import android.os.PowerManager.WakeLock;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -69,6 +75,8 @@ public class ControlCenterv2 extends AppCompatActivity
         AppCompatDelegate.setCompatVectorFromResourcesEnabled(true);
     }
 
+    private static final Logger LOG = LoggerFactory.getLogger(ControlCenterv2.class);
+
     private DeviceManager deviceManager;
     private ImageView background;
 
@@ -76,6 +84,7 @@ public class ControlCenterv2 extends AppCompatActivity
     private RecyclerView deviceListView;
 
     private boolean isLanguageInvalid = false;
+    private WakeLock wakeLock;
 
     private final BroadcastReceiver mReceiver = new BroadcastReceiver() {
         @Override
@@ -187,6 +196,10 @@ public class ControlCenterv2 extends AppCompatActivity
             prefs.getPreferences().edit().putBoolean("firstrun", false).apply();
             Intent enableIntent = new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS");
             startActivity(enableIntent);
+
+            Intent batOptimizIntent = new Intent();
+            batOptimizIntent.setAction(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+            startActivity(batOptimizIntent);
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             checkAndRequestPermissions();
@@ -196,6 +209,10 @@ public class ControlCenterv2 extends AppCompatActivity
         if (cl.isFirstRun()) {
             cl.getLogDialog().show();
         }
+
+        PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);    
+        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "GBWakelockTag");
+        wakeLock.acquire();
 
         GBApplication.deviceService().start();
 
@@ -207,8 +224,15 @@ public class ControlCenterv2 extends AppCompatActivity
     }
 
     @Override
+    protected void onPause() {
+        super.onPause();
+        LOG.info("onPause");
+   }
+ 
+    @Override
     protected void onResume() {
         super.onResume();
+        LOG.info("onResume");
         if (isLanguageInvalid) {
             isLanguageInvalid = false;
             recreate();
@@ -216,7 +240,15 @@ public class ControlCenterv2 extends AppCompatActivity
     }
 
     @Override
+    protected void onStop() {
+        super.onStop();
+        LOG.info("onStop");
+   }
+ 
+    @Override
     protected void onDestroy() {
+        LOG.info("onDestroy");
+        wakeLock.release();
         unregisterForContextMenu(deviceListView);
         LocalBroadcastManager.getInstance(this).unregisterReceiver(mReceiver);
         super.onDestroy();

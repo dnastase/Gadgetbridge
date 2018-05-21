@@ -505,9 +505,10 @@ public class PebbleProtocol extends GBDeviceProtocol {
 
         if (mFwMajor >= 3) {
             // 3.x notification
+            LOG.info("encoding Blob w/ simpleActions: " + notificationSpec.simpleActions + " and canned replies:" + notificationSpec.cannedReplies); 
             return encodeBlobdbNotification(id, (int) (ts & 0xffffffffL), title, subtitle, notificationSpec.body,
                     notificationSpec.sourceName, hasHandle, notificationSpec.type, notificationSpec.pebbleColor,
-                    notificationSpec.cannedReplies);
+                    notificationSpec.cannedReplies, notificationSpec.simpleActions);
         } else if (mForceProtocol || notificationSpec.type != NotificationType.GENERIC_EMAIL) {
             // 2.x notification
             return encodeExtensibleNotification(id, (int) (ts & 0xffffffffL), title, subtitle, notificationSpec.body,
@@ -934,7 +935,7 @@ public class PebbleProtocol extends GBDeviceProtocol {
 
     private byte[] encodeBlobdbNotification(int id, int timestamp, String title, String subtitle, String body, String sourceName,
                                             boolean hasHandle, NotificationType notificationType, byte backgroundColor,
-                                            String[] cannedReplies) {
+                                            String[] cannedReplies, String[] simpleActions) {
         final short NOTIFICATION_PIN_LENGTH = 46;
         final short ACTION_LENGTH_MIN = 10;
 
@@ -947,8 +948,8 @@ public class PebbleProtocol extends GBDeviceProtocol {
         int icon_id = notificationType.icon;
 
         // Calculate length first
-        byte actions_count;
-        short actions_length;
+        byte actions_count = 0;
+        short actions_length = 0;
         String dismiss_string;
         String open_string = "Open on phone";
         String mute_string = "Mute";
@@ -957,19 +958,26 @@ public class PebbleProtocol extends GBDeviceProtocol {
             mute_string += " " + sourceName;
         }
 
-        byte dismiss_action_id;
-        if (hasHandle && !"ALARMCLOCKRECEIVER".equals(sourceName)) {
-            actions_count = 3;
-            dismiss_string = "Dismiss";
-            dismiss_action_id = 0x02;
-            actions_length = (short) (ACTION_LENGTH_MIN * actions_count + dismiss_string.getBytes().length + open_string.getBytes().length + mute_string.getBytes().length);
-        } else {
-            actions_count = 1;
-            dismiss_string = "Dismiss all";
-            dismiss_action_id = 0x03;
-            actions_length = (short) (ACTION_LENGTH_MIN * actions_count + dismiss_string.getBytes().length);
-        }
+        //byte dismiss_action_id;
+        //if (hasHandle && !"ALARMCLOCKRECEIVER".equals(sourceName)) {
+        //    actions_count = 3;
+        //    dismiss_string = "Dismiss";
+        //    dismiss_action_id = 0x02;
+        //    actions_length = (short) (ACTION_LENGTH_MIN * actions_count + dismiss_string.getBytes().length + open_string.getBytes().length + mute_string.getBytes().length);
+        //} else {
+        //    actions_count = 1;
+        //    dismiss_string = "Dismiss all";
+        //    dismiss_action_id = 0x03;
+        //    actions_length = (short) (ACTION_LENGTH_MIN * actions_count + dismiss_string.getBytes().length);
+        //}
 
+        if (simpleActions != null && simpleActions.length > 0) {
+            for (String simpleAction : simpleActions) {
+                actions_count++;
+                actions_length += (short) (ACTION_LENGTH_MIN  + simpleAction.getBytes().length); 
+            }
+        }
+ 
         int replies_length = -1;
         if (cannedReplies != null && cannedReplies.length > 0) {
             actions_count++;
@@ -1037,29 +1045,30 @@ public class PebbleProtocol extends GBDeviceProtocol {
         buf.put(backgroundColor);
 
         // dismiss action
-        buf.put(dismiss_action_id);
-        buf.put((byte) 0x02); // generic action, dismiss did not do anything
-        buf.put((byte) 0x01); // number attributes
-        buf.put((byte) 0x01); // attribute id (title)
-        buf.putShort((short) dismiss_string.getBytes().length);
-        buf.put(dismiss_string.getBytes());
+        //buf.put(dismiss_action_id);
+        //buf.put((byte) 0x02); // generic action, dismiss did not do anything
+        //buf.put((byte) 0x01); // number attributes
+        //buf.put((byte) 0x01); // attribute id (title)
+        //buf.putShort((short) dismiss_string.getBytes().length);
+        //buf.put(dismiss_string.getBytes());
+
 
         // open and mute actions
-        if (hasHandle && !"ALARMCLOCKRECEIVER".equals(sourceName)) {
-            buf.put((byte) 0x01);
-            buf.put((byte) 0x02); // generic action
-            buf.put((byte) 0x01); // number attributes
-            buf.put((byte) 0x01); // attribute id (title)
-            buf.putShort((short) open_string.getBytes().length);
-            buf.put(open_string.getBytes());
+        //if (hasHandle && !"ALARMCLOCKRECEIVER".equals(sourceName)) {
+        //    buf.put((byte) 0x01);
+        //    buf.put((byte) 0x02); // generic action
+        //    buf.put((byte) 0x01); // number attributes
+        //    buf.put((byte) 0x01); // attribute id (title)
+        //    buf.putShort((short) open_string.getBytes().length);
+        //    buf.put(open_string.getBytes());
 
-            buf.put((byte) 0x04);
-            buf.put((byte) 0x02); // generic action
-            buf.put((byte) 0x01); // number attributes
-            buf.put((byte) 0x01); // attribute id (title)
-            buf.putShort((short) mute_string.getBytes().length);
-            buf.put(mute_string.getBytes());
-        }
+        //    buf.put((byte) 0x04);
+        //    buf.put((byte) 0x02); // generic action
+        //    buf.put((byte) 0x01); // number attributes
+        //    buf.put((byte) 0x01); // attribute id (title)
+        //    buf.putShort((short) mute_string.getBytes().length);
+        //    buf.put(mute_string.getBytes());
+        //}
 
         if (cannedReplies != null && replies_length > 0) {
             buf.put((byte) 0x05);
@@ -1078,6 +1087,19 @@ public class PebbleProtocol extends GBDeviceProtocol {
             buf.put(cannedReplies[cannedReplies.length - 1].getBytes());
         }
 
+        if (simpleActions != null && simpleActions.length > 0) {
+            int simpleActionIdx = 1;
+            for (String simpleAction : simpleActions) { 
+                buf.put((byte) (0x05 + simpleActionIdx));
+                simpleActionIdx++;
+                buf.put((byte) 0x02); // generic action, dismiss did not do anything
+                buf.put((byte) 0x01); // number attributes
+                buf.put((byte) 0x01); // attribute id (title)
+                buf.putShort((short) simpleAction.getBytes().length);
+                buf.put(simpleAction.getBytes());
+            }
+        }
+ 
         return encodeBlobdb(UUID.randomUUID(), BLOBDB_INSERT, BLOBDB_NOTIFICATION, buf.array());
     }
 
@@ -2114,12 +2136,13 @@ public class PebbleProtocol extends GBDeviceProtocol {
                 id = buf.getInt();
             }
             byte action = buf.get();
-            if (action >= 0x00 && action <= 0x05) {
+            if (action >= 0x00 && action <= 0x16) {
                 GBDeviceEventNotificationControl devEvtNotificationControl = new GBDeviceEventNotificationControl();
                 devEvtNotificationControl.handle = id;
                 String caption = "undefined";
                 int icon_id = 1;
                 boolean needsAck2x = true;
+                LOG.info("id: " + id + " decodeAction action:" + action);
                 switch (action) {
                     case 0x01:
                         devEvtNotificationControl.event = GBDeviceEventNotificationControl.Event.OPEN;
@@ -2147,8 +2170,10 @@ public class PebbleProtocol extends GBDeviceProtocol {
                     case 0x00:
                         boolean failed = true;
                         byte attribute_count = buf.get();
+                        LOG.info("attr_cnt:" + attribute_count);
                         if (attribute_count > 0) {
                             byte attribute = buf.get();
+                            LOG.info("attr:" + attribute);
                             if (attribute == 0x01) { // reply string is in attribute 0x01
                                 short length = buf.getShort();
                                 if (length > 64) length = 64;
@@ -2169,6 +2194,19 @@ public class PebbleProtocol extends GBDeviceProtocol {
                             }
                         }
                         if (failed) {
+                            caption = "FAILED";
+                            icon_id = PebbleIconID.RESULT_FAILED;
+                            devEvtNotificationControl = null; // error
+                        }
+                        break;
+                    default:
+                        if (action > 0x05) {
+                           int simpleActionId = action - 0x05;
+                           caption = "EXECUTED";
+                           devEvtNotificationControl.event = GBDeviceEventNotificationControl.Event.EXECUTE;
+                           devEvtNotificationControl.title = Integer.toString(simpleActionId);
+                           LOG.info("detected simple action, subId:" + simpleActionId + " title:" + devEvtNotificationControl.title);
+                        } else { 
                             caption = "FAILED";
                             icon_id = PebbleIconID.RESULT_FAILED;
                             devEvtNotificationControl = null; // error

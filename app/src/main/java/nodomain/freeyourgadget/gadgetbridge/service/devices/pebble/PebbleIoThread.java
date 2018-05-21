@@ -27,6 +27,7 @@ import android.os.ParcelUuid;
 import android.support.v4.content.LocalBroadcastManager;
 import android.webkit.ValueCallback;
 import android.webkit.WebView;
+import android.os.PowerManager;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -148,6 +149,10 @@ class PebbleIoThread extends GBDeviceIoThread {
         mEnablePebblekit = prefs.getBoolean("pebble_enable_pebblekit", false);
         mPebbleProtocol.setAlwaysACKPebbleKit(prefs.getBoolean("pebble_always_ack_pebblekit", false));
         mPebbleProtocol.setEnablePebbleKit(mEnablePebblekit);
+
+        PowerManager powerManager = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+        LOG.info("packageName: " + context.getPackageName()); 
+        LOG.info("isIgnoringBatteryOptimizations: " + powerManager.isIgnoringBatteryOptimizations(context.getPackageName()));
     }
 
     private int readWithException(InputStream inputStream, byte[] buffer, int byteOffset, int byteCount) throws IOException {
@@ -229,14 +234,47 @@ class PebbleIoThread extends GBDeviceIoThread {
 
     @Override
     public void run() {
-        mIsConnected = connect();
-        if (!mIsConnected) {
-            if (GBApplication.getGBPrefs().getAutoReconnect() && !mQuit) {
-                gbDevice.setState(GBDevice.State.WAITING_FOR_RECONNECT);
-                gbDevice.sendDeviceUpdateIntent(getContext());
+        //mIsConnected = connect();
+        //if (!mIsConnected) {
+        //    if (GBApplication.getGBPrefs().getAutoReconnect() && !mQuit) {
+        //        gbDevice.setState(GBDevice.State.WAITING_FOR_RECONNECT);
+        //        gbDevice.sendDeviceUpdateIntent(getContext());
+        //    }
+        //    return;
+        //}
+
+        mIsConnected = false;
+        int initReconnectAttempts = prefs.getInt("pebble_reconnect_attempts", 10);
+        if (!mQuit && GBApplication.getGBPrefs().getAutoReconnect() && initReconnectAttempts > 0) {
+            gbDevice.setState(GBDevice.State.WAITING_FOR_RECONNECT);
+            gbDevice.sendDeviceUpdateIntent(getContext());
+
+            int delaySeconds = 1;
+            while (initReconnectAttempts-- > 0 && !mQuit && !mIsConnected) {
+                //wait a bit so as not to force status 133
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException ignored) {
+                }
+                LOG.info("init connect: Trying to connect (attempts left " + initReconnectAttempts + ")");
+                mIsConnected = connect();
+                if (!mIsConnected) {
+                    try {
+                        Thread.sleep(delaySeconds * 1000);
+                    } catch (InterruptedException ignored) {
+                    }
+                    if (delaySeconds < 64) {
+                        delaySeconds *= 2;
+                    }
+                }
             }
-            return;
         }
+        LOG.info("init connect mQuit: " + mQuit);
+        if (!mIsConnected) {
+            mBtSocket = null;
+            LOG.info("init connect: Bluetooth socket closed, will quit IO Thread");
+            return;
+        } 
 
         byte[] buffer = new byte[8192];
         enablePebbleKitSupport(true);
@@ -384,6 +422,11 @@ class PebbleIoThread extends GBDeviceIoThread {
 
                         int delaySeconds = 1;
                         while (reconnectAttempts-- > 0 && !mQuit && !mIsConnected) {
+                            //wait a bit so as not to force status 133
+                            try {
+                                Thread.sleep(1000);
+                            } catch (InterruptedException ignored) {
+                            }
                             LOG.info("Trying to reconnect (attempts left " + reconnectAttempts + ")");
                             mIsConnected = connect();
                             if (!mIsConnected) {
@@ -397,6 +440,7 @@ class PebbleIoThread extends GBDeviceIoThread {
                             }
                         }
                     }
+                    LOG.info("mQuit: " + mQuit);
                     if (!mIsConnected) {
                         mBtSocket = null;
                         LOG.info("Bluetooth socket closed, will quit IO Thread");
@@ -722,6 +766,7 @@ class PebbleIoThread extends GBDeviceIoThread {
 
     @Override
     public void quit() {
+        LOG.info("quit()");
         mQuit = true;
         if (mBtSocket != null) {
             try {

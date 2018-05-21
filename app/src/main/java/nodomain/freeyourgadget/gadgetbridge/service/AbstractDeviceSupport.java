@@ -303,14 +303,18 @@ public abstract class AbstractDeviceSupport implements DeviceSupport {
                     LOG.info("Got notification reply for SMS from " + deviceEvent.phoneNumber + " : " + deviceEvent.reply);
                     SmsManager.getDefault().sendTextMessage(deviceEvent.phoneNumber, null, deviceEvent.reply, null, null);
                 } else {
-                    LOG.info("Got notification reply for notification id " + deviceEvent.handle + " : " + deviceEvent.reply);
+                    LOG.info("Got notification reply for notification id " + deviceEvent.handle + " reply msg: " + deviceEvent.reply);
                     action = NotificationListener.ACTION_REPLY;
                 }
                 break;
+            case EXECUTE:
+               action = NotificationListener.ACTION_EXECUTE;
+               break;
         }
         if (action != null) {
             Intent notificationListenerIntent = new Intent(action);
             notificationListenerIntent.putExtra("handle", deviceEvent.handle);
+            notificationListenerIntent.putExtra("title", deviceEvent.title);
             if (deviceEvent.reply != null) {
                 Prefs prefs = GBApplication.getPrefs();
                 String suffix = prefs.getString("canned_reply_suffix", null);

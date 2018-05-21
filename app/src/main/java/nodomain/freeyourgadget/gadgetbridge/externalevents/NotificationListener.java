@@ -52,6 +52,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.ArrayList;
 
 import nodomain.freeyourgadget.gadgetbridge.GBApplication;
 import nodomain.freeyourgadget.gadgetbridge.R;
@@ -83,8 +84,16 @@ public class NotificationListener extends NotificationListenerService {
             = "nodomain.freeyourgadget.gadgetbridge.notificationlistener.action.mute";
     public static final String ACTION_REPLY
             = "nodomain.freeyourgadget.gadgetbridge.notificationlistener.action.reply";
+    public static final String ACTION_EXECUTE
+            = "nodomain.freeyourgadget.gadgetbridge.notificationlistener.action.execute";
 
+    private int LastActionLookupMasterId = 1;
     private LimitedQueue mActionLookup = new LimitedQueue(16);
+
+    private int GetActionLookupMasterId() {
+        LastActionLookupMasterId++;
+        return LastActionLookupMasterId << 8;
+    }
 
     private final BroadcastReceiver mReceiver = new BroadcastReceiver() {
 
@@ -144,6 +153,7 @@ public class NotificationListener extends NotificationListenerService {
                     int id = intent.getIntExtra("handle", -1);
                     String reply = intent.getStringExtra("reply");
                     NotificationCompat.Action replyAction = (NotificationCompat.Action) mActionLookup.lookup(id);
+                    LOG.info("trying to reply for id:" + id + " action:" + replyAction + " action.ri:" + replyAction.getRemoteInputs());
                     if (replyAction != null && replyAction.getRemoteInputs() != null) {
                         RemoteInput[] remoteInputs = replyAction.getRemoteInputs();
                         PendingIntent actionIntent = replyAction.getActionIntent();
@@ -162,6 +172,27 @@ public class NotificationListener extends NotificationListenerService {
                         }
                     }
                     break;
+                case ACTION_EXECUTE:
+                    int idAction = intent.getIntExtra("handle", -1);
+                    String title = intent.getStringExtra("title");
+                    int idSubAction = Integer.parseInt(title);
+                    int idExec = idAction + idSubAction;
+                    LOG.info("trying to execute id:" + idExec + " from handle:" + idAction + " and subAction:" + idSubAction);
+                    NotificationCompat.Action actionExec = (NotificationCompat.Action) mActionLookup.lookup(idExec);
+                    if (actionExec != null) {
+                        PendingIntent actionIntent = actionExec.getActionIntent();
+                        Intent localIntent = new Intent();
+                        localIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+
+                        try {
+                            LOG.info("will send exec intent to remote application");
+                            actionIntent.send(context, 0, localIntent);
+                            mActionLookup.remove(idExec);
+                        } catch (PendingIntent.CanceledException e) {
+                            LOG.warn("execute ToLastNotification error: " + e.getLocalizedMessage());
+                        }
+                    }
+                    break;              
             }
 
         }
@@ -177,6 +208,7 @@ public class NotificationListener extends NotificationListenerService {
         filterLocal.addAction(ACTION_DISMISS_ALL);
         filterLocal.addAction(ACTION_MUTE);
         filterLocal.addAction(ACTION_REPLY);
+        filterLocal.addAction(ACTION_EXECUTE);
         LocalBroadcastManager.getInstance(this).registerReceiver(mReceiver, filterLocal);
     }
 
@@ -188,8 +220,10 @@ public class NotificationListener extends NotificationListenerService {
 
     @Override
     public void onNotificationPosted(StatusBarNotification sbn) {
-        if (shouldIgnore(sbn))
+        if (shouldIgnore(sbn)) {
+            LOG.info("ignoring StatusBarNotification from " + sbn.getPackageName().toLowerCase());
             return;
+        }
 
         switch (GBApplication.getGrantedInterruptionFilter()) {
             case NotificationManager.INTERRUPTION_FILTER_ALL:
@@ -205,7 +239,7 @@ public class NotificationListener extends NotificationListenerService {
         String source = sbn.getPackageName().toLowerCase();
         Notification notification = sbn.getNotification();
         NotificationSpec notificationSpec = new NotificationSpec();
-        notificationSpec.id = (int) sbn.getPostTime(); //FIXME: a truly unique id would be better
+        notificationSpec.id = GetActionLookupMasterId(); //(int) sbn.getPostTime(); //FIXME: a truly unique id would be better
 
         // determinate Source App Name ("Label")
         PackageManager pm = getPackageManager();
@@ -237,9 +271,9 @@ public class NotificationListener extends NotificationListenerService {
         // Get color
         notificationSpec.pebbleColor = getPebbleColorForNotification(notificationSpec);
 
-        LOG.info("Processing notification " + notificationSpec.id + " from source " + source + " with flags: " + notification.flags);
-
         dissectNotificationTo(notification, notificationSpec, preferBigText);
+
+        LOG.info("Processing notification " + notificationSpec.title + " id:" + notificationSpec.id + " from source " + source + " with flags: " + notification.flags);
 
         // ignore Gadgetbridge's very own notifications, except for those from the debug screen
         if (getApplicationContext().getPackageName().equals(source)) {
@@ -250,16 +284,30 @@ public class NotificationListener extends NotificationListenerService {
 
         NotificationCompat.WearableExtender wearableExtender = new NotificationCompat.WearableExtender(notification);
         List<NotificationCompat.Action> actions = wearableExtender.getActions();
+                        
+        ArrayList<String> simpleActions = new ArrayList<>();
 
+        int simpleActionIdx = 1;
         for (NotificationCompat.Action act : actions) {
+            if (act != null && act.getRemoteInputs() == null) {
+                int execId = notificationSpec.id + simpleActionIdx;
+                mActionLookup.add(notificationSpec.id + simpleActionIdx, act);
+                simpleActionIdx++;
+                notificationSpec.flags |= NotificationSpec.FLAG_WEARABLE_REPLY;
+                simpleActions.add(act.getTitle().toString());
+                LOG.info("found wearable action t:" + act.getTitle() + " ri:" + act.getRemoteInputs());
+            }
             if (act != null && act.getRemoteInputs() != null) {
-                LOG.info("found wearable action: " + act.getTitle() + "  " + sbn.getTag());
+                LOG.info("found wearable action with remote inputs: t:" + act.getTitle() + " tag:" + sbn.getTag() + " #ri:" + act.getRemoteInputs().length);
                 mActionLookup.add(notificationSpec.id, act);
                 notificationSpec.flags |= NotificationSpec.FLAG_WEARABLE_REPLY;
-                break;
+                //break;
             }
         }
 
+        LOG.info("simpleActions:" + simpleActions);
+        notificationSpec.simpleActions = simpleActions.toArray(new String[simpleActions.size()]); 
+        LOG.info("notificationSpec.simpleActions:" + notificationSpec.simpleActions);
         if ((notificationSpec.flags & NotificationSpec.FLAG_WEARABLE_REPLY) == 0 && NotificationCompat.isGroupSummary(notification)) { //this could cause #395 to come back
             LOG.info("Not forwarding notification, FLAG_GROUP_SUMMARY is set and no wearable action present. Notification flags: " + notification.flags);
             return;
@@ -272,7 +320,7 @@ public class NotificationListener extends NotificationListenerService {
 
         Bundle extras = NotificationCompat.getExtras(notification);
 
-        //dumpExtras(extras);
+        dumpExtras(extras);
 
         CharSequence title = extras.getCharSequence(Notification.EXTRA_TITLE);
         if (title != null) {

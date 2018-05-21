@@ -242,7 +242,7 @@ public class PebblePairingActivity extends AbstractGBActivity {
             Query<Device> query = deviceDao.queryBuilder().where(DeviceDao.Properties.Type.eq(1), DeviceDao.Properties.Identifier.like("%" + expectedSuffix)).build();
             List<Device> devices = query.list();
             if (devices.size() == 0) {
-                GB.toast("Please pair your non-LE Pebble before pairing the LE one", Toast.LENGTH_SHORT, GB.INFO);
+                GB.toast("Please pair and connect! to your non-LE Pebble before pairing the LE one", Toast.LENGTH_SHORT, GB.INFO);
                 returnToPairingActivity();
                 return null;
             } else if (devices.size() > 1) {

@@ -150,6 +150,7 @@ import static nodomain.freeyourgadget.gadgetbridge.model.DeviceService.EXTRA_NOT
 import static nodomain.freeyourgadget.gadgetbridge.model.DeviceService.EXTRA_NOTIFICATION_SUBJECT;
 import static nodomain.freeyourgadget.gadgetbridge.model.DeviceService.EXTRA_NOTIFICATION_TITLE;
 import static nodomain.freeyourgadget.gadgetbridge.model.DeviceService.EXTRA_NOTIFICATION_TYPE;
+import static nodomain.freeyourgadget.gadgetbridge.model.DeviceService.EXTRA_NOTIFICATION_SIMPLE_ACTIONS;
 import static nodomain.freeyourgadget.gadgetbridge.model.DeviceService.EXTRA_RECORDED_DATA_TYPES;
 import static nodomain.freeyourgadget.gadgetbridge.model.DeviceService.EXTRA_URI;
 import static nodomain.freeyourgadget.gadgetbridge.model.DeviceService.EXTRA_VIBRATION_INTENSITY;
@@ -345,6 +346,7 @@ public class DeviceCommunicationService extends Service implements SharedPrefere
                 notificationSpec.pebbleColor = (byte) intent.getSerializableExtra(EXTRA_NOTIFICATION_PEBBLE_COLOR);
                 notificationSpec.id = intent.getIntExtra(EXTRA_NOTIFICATION_ID, -1);
                 notificationSpec.flags = intent.getIntExtra(EXTRA_NOTIFICATION_FLAGS, 0);
+                notificationSpec.simpleActions = intent.getStringArrayExtra(EXTRA_NOTIFICATION_SIMPLE_ACTIONS);
 
                 if (notificationSpec.type == NotificationType.GENERIC_SMS && notificationSpec.phoneNumber != null) {
                     notificationSpec.id = mRandom.nextInt(); // FIXME: add this in external SMS Receiver?
@@ -368,6 +370,7 @@ public class DeviceCommunicationService extends Service implements SharedPrefere
                     }
                 }
 
+                LOG.info("at ACTION_NOTIFICATION simpleActions:" + notificationSpec.simpleActions);
                 mDeviceSupport.onNotification(notificationSpec);
                 break;
             }

@@ -29,6 +29,7 @@ public class NotificationSpec {
     public NotificationType type;
     public String sourceName;
     public String[] cannedReplies;
+    public String[] simpleActions;
 
     /**
      * The application that generated the notification.

@@ -115,6 +115,9 @@ class PebbleGATTClient extends BluetoothGattCallback {
             gatt.discoverServices();
         } else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
             mPebbleLESupport.close();
+            synchronized (mPebbleLESupport) {
+               mPebbleLESupport.notify();
+            }
         }
     }
 
@@ -231,7 +234,13 @@ class PebbleGATTClient extends BluetoothGattCallback {
         if (mBluetoothGatt != null) {
             this.close();
         }
-        mBluetoothGatt = btDevice.connectGatt(mContext, false, this);
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException ignore) {
+        } 
+        LOG.info("bef btDevice.connectGatt");
+        mBluetoothGatt = btDevice.connectGatt(mContext, false, this, BluetoothDevice.TRANSPORT_LE);
+        LOG.info("aft btDevice.connectGatt");
     }
 
     private void subscribeToConnectivity(BluetoothGatt gatt) {
@@ -293,6 +302,7 @@ class PebbleGATTClient extends BluetoothGattCallback {
     }
 
     public void close() {
+        LOG.info("PebbleGATTClient.close");
         if (mBluetoothGatt != null) {
             mBluetoothGatt.disconnect();
             mBluetoothGatt.close();
